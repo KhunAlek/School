@@ -27,16 +27,16 @@ jobs:
           s = f.read_text()
           old = '    p.pct = (d["CurrentCapacity"] as? NSNumber)?.intValue ?? 0'
           new = '''    let currentCapacity = (d["CurrentCapacity"] as? NSNumber)?.doubleValue ?? 0
-    // On some Intel Macs CurrentCapacity is in mAh, not percentage.
-    // Apple's newer battery implementations return percentage directly.
-    if currentCapacity > 100,
-       let maxCapacity = (d["MaxCapacity"] as? NSNumber)?.doubleValue,
-       maxCapacity > 0 {
-        p.pct = Int((currentCapacity / maxCapacity * 100).rounded())
-    } else {
-        p.pct = Int(currentCapacity.rounded())
-    }
-    p.pct = min(100, max(0, p.pct))'''
+          // On some Intel Macs CurrentCapacity is in mAh, not percentage.
+          // Apple's newer battery implementations return percentage directly.
+          if currentCapacity > 100,
+             let maxCapacity = (d["MaxCapacity"] as? NSNumber)?.doubleValue,
+             maxCapacity > 0 {
+              p.pct = Int((currentCapacity / maxCapacity * 100).rounded())
+          } else {
+              p.pct = Int(currentCapacity.rounded())
+          }
+          p.pct = min(100, max(0, p.pct))'''
           assert s.count(old) == 1, "Upstream source changed; stop instead of an unverified patch"
           f.write_text(s.replace(old, new))
           PY
