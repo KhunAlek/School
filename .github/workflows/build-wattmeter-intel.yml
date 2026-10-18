@@ -1,0 +1,58 @@
+name: Build WattMeter Intel Fix
+
+on:
+  push:
+    branches: [wattmeter-build]
+    paths:
+      - '.github/workflows/build-wattmeter-intel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    steps:
+      - name: Check out upstream WattMeter at pinned commit
+        run: |
+          git clone https://github.com/ilikeafrica/wattmeter.git wattmeter
+          cd wattmeter
+          git checkout d470014eae647adaa8c07e62560f87383dfb6f89
+      - name: Fix Intel capacity and protect percentage display
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          f = Path("wattmeter/main.swift")
+          s = f.read_text()
+          old = '    p.pct = (d["CurrentCapacity"] as? NSNumber)?.intValue ?? 0'
+          new = '''    let currentCapacity = (d["CurrentCapacity"] as? NSNumber)?.doubleValue ?? 0
+    // On some Intel Macs CurrentCapacity is in mAh, not percentage.
+    // Apple's newer battery implementations return percentage directly.
+    if currentCapacity > 100,
+       let maxCapacity = (d["MaxCapacity"] as? NSNumber)?.doubleValue,
+       maxCapacity > 0 {
+        p.pct = Int((currentCapacity / maxCapacity * 100).rounded())
+    } else {
+        p.pct = Int(currentCapacity.rounded())
+    }
+    p.pct = min(100, max(0, p.pct))'''
+          assert s.count(old) == 1, "Upstream source changed; stop instead of an unverified patch"
+          f.write_text(s.replace(old, new))
+          PY
+      - name: Build Intel Mac application
+        run: |
+          xcodebuild -project wattmeter/WattMeter.xcodeproj -scheme WattMeter -configuration Release -derivedDataPath "$RUNNER_TEMP/wattmeter-build" ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
+      - name: Package app
+        run: |
+          APP="$RUNNER_TEMP/wattmeter-build/Build/Products/Release/WattMeter.app"
+          test -f "$APP/Contents/MacOS/WattMeter"
+          lipo -info "$APP/Contents/MacOS/WattMeter"
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "WattMeter-Intel-Fixed.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WattMeter-Intel-Fixed
+          path: WattMeter-Intel-Fixed.zip
+          if-no-files-found: error
+          retention-days: 30
